@@ -1,0 +1,79 @@
+name: segvlad
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.8
+  - libblas=*=*mkl
+  - mkl
+  - pip
+  # Removed Linux C/C++ dependencies
+
+  # CUDA & FAISS:
+  # CUDA 10.2 in original code is outdated for modern GPUs.
+  # Using CUDA 11.8 for compatibility with modern GPUs and PyTorch.
+  - cudatoolkit=11.8
+  - faiss-gpu
+
+  - pip:
+    #   # PyTorch
+    #    Authors want us to download torch later.
+    #   - torch==1.11.0+cu113 --extra-index-url https://download.pytorch.org/whl/cu113
+    #   - torchvision==0.12.0+cu113 --extra-index-url https://download.pytorch.org/whl/cu113
+    #   - torchaudio==0.11.0 --extra-index-url https://download.pytorch.org/whl/cu113
+
+      # Retain original author pip dependencies
+      - certifi==2024.8.30
+      - charset-normalizer==3.4.0
+      - contourpy==1.1.1
+      - cycler==0.12.1
+      - docstring-parser==0.16
+      - einops==0.8.0
+      - eval-type-backport==0.2.0
+      - fast-pytorch-kmeans==0.2.0.1
+      - filelock==3.16.1
+      - fonttools==4.54.1
+      - fsspec==2024.9.0
+      - h5py==3.11.0
+      - huggingface-hub==0.25.2
+      - idna==3.10
+      - importlib-resources==6.4.5
+      - joblib==1.4.2
+      - kiwisolver==1.4.7
+      - markdown-it-py==3.0.0
+      - matplotlib==3.7.5
+      - mdurl==0.1.2
+      - natsort==8.4.0
+      - networkx==3.1
+      - numpy==1.24.4
+      - opencv-python==4.10.0.84
+      - packaging==24.1
+      - pandas==2.0.3
+      - pillow==10.4.0
+      - pygments==2.18.0
+      - pynvml==11.5.3
+      - pyparsing==3.1.4
+      - python-dateutil==2.9.0.post0
+      - pytz==2024.2
+      - pyyaml==6.0.2
+      - regex==2024.9.11
+      - requests==2.32.3
+      - rich==13.9.2
+      - safetensors==0.4.5
+      - scikit-learn==1.3.2
+      - scipy==1.10.1
+      - shtab==1.7.1
+      - six==1.16.0
+      - threadpoolctl==3.5.0
+      - tokenizers==0.20.1
+      - tqdm==4.66.5
+      - transformers==4.45.2
+      - typing-extensions==4.12.2
+      - tyro==0.8.12
+      - tzdata==2024.2
+      - urllib3==2.2.3
+      - utm==0.7.0
+      - zipp==3.20.2
+      - wandb==0.16.6
