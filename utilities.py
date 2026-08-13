@@ -235,6 +235,10 @@ class DinoV2ExtractFeatures:
             - norm_descs:   If True, the descriptors are normalized
             - device:   PyTorch device to use
         """
+        # (Windows) Bypass ssl verification, as the found certi on windows was corrupted/truncated.
+        import ssl
+        ssl._create_default_https_context = ssl._create_unverified_context
+        
         self.vit_type: str = dino_model
         self.dino_model: nn.Module = torch.hub.load(
                 'facebookresearch/dinov2', dino_model)
@@ -287,7 +291,8 @@ class DinoV2ExtractFeatures:
         return res.float()
     
     def __del__(self):
-        self.fh_handle.remove()
+        if hasattr(self, 'fh_handle'):
+            self.fh_handle.remove()
 
 
 # %% -------------- MAE Utilities (Position embedding) --------------
