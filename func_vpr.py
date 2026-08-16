@@ -545,8 +545,8 @@ def process_single_SAM(cfg, img, models, device):
  
     else : img_p = img
     
-    with torch.cuda.amp.autocast():
-        masks = mask_generator.generate(img_p)
+    # with torch.cuda.amp.autocast():
+    masks = mask_generator.generate(img_p)
 
     return img_p, masks
 
@@ -681,7 +681,10 @@ def process_SAM_to_h5(h5FullPath,cfg,ims,models,device="cuda",dataDir="./"):
             for j, m in enumerate(masks):
                 for k in m.keys():
                     # Added compression to reduce output datasize.
-                    grp["masks"].create_dataset(f"{j}/{k}", data=m[k], compression="gzip", compression_opts=4)    
+                    if k == "segmentation":
+                        grp["masks"].create_dataset(f"{j}/{k}", data=m[k], compression="gzip", compression_opts=4)
+                    else:
+                        grp["masks"].create_dataset(f"{j}/{k}", data=m[k])
 
 
 def process_SAM_to_h5_FastSAM(h5FullPath,cfg,ims,model,device="cuda",dataDir="./"):
