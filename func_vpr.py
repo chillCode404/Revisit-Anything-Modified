@@ -31,6 +31,7 @@ from torchvision import transforms as tvf
 from sam.segment_anything import sam_model_registry, SamPredictor, SamAutomaticMaskGenerator
 from utilities import DinoV2ExtractFeatures
 from DINO.dino_wrapper import get_dino_pixel_wise_features_model, preprocess_frame
+import torch
 import importlib
 # vlad_buff = importlib.import_module("VLAD-BuFF")
 # from VLAD-BuFF.vpr_model import VPRModel
@@ -512,7 +513,7 @@ def loadSAM(sam_checkpoint, cfg, device = 'cuda'):
     sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
     sam.to(device=device)
     # change points processed per batch to 32 to reduce vram usage.
-    mask_generator = SamAutomaticMaskGenerator(sam, points_per_batch=32)
+    mask_generator = SamAutomaticMaskGenerator(sam, points_per_batch=16)
 
     return mask_generator
 
@@ -543,7 +544,9 @@ def process_single_SAM(cfg, img, models, device):
         img_p = cv2.resize(img, (cfg['desired_width'],cfg['desired_height']))
  
     else : img_p = img
-    masks = mask_generator.generate(img_p)
+    
+    with torch.cuda.amp.autocast():
+        masks = mask_generator.generate(img_p)
 
     return img_p, masks
 
