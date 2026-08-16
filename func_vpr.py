@@ -663,7 +663,8 @@ def process_dino_ft_to_h5(h5FullPath,cfg,ims,models,device = "cuda",dataDir="./"
                 imname, im = i, ims[i][rmin:,:,:]
             im_p, ift_dino = process_single_DINO(cfg,im,models,device)
             grp = f.create_group(f"{imname}")
-            grp.create_dataset("ift_dino", data=ift_dino.detach().cpu().numpy(), chunks=True)
+            # Added compression to reduce h5 file data size.
+            grp.create_dataset("ift_dino", data=ift_dino.detach().cpu().numpy(), chunks=True, compression="gzip", compression_opts=4)
 
 def process_SAM_to_h5(h5FullPath,cfg,ims,models,device="cuda",dataDir="./"):
     rmin = cfg['rmin']
@@ -679,7 +680,8 @@ def process_SAM_to_h5(h5FullPath,cfg,ims,models,device="cuda",dataDir="./"):
             grp.create_group("masks")
             for j, m in enumerate(masks):
                 for k in m.keys():
-                    grp["masks"].create_dataset(f"{j}/{k}", data=m[k])    
+                    # Added compression to reduce output datasize.
+                    grp["masks"].create_dataset(f"{j}/{k}", data=m[k], compression="gzip", compression_opts=4)    
 
 
 def process_SAM_to_h5_FastSAM(h5FullPath,cfg,ims,model,device="cuda",dataDir="./"):
