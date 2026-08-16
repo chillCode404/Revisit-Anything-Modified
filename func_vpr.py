@@ -511,7 +511,8 @@ def loadSAM(sam_checkpoint, cfg, device = 'cuda'):
     model_type = "vit_h"
     sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
     sam.to(device=device)
-    mask_generator = SamAutomaticMaskGenerator(sam)
+    # change points processed per batch to 32 to reduce vram usage.
+    mask_generator = SamAutomaticMaskGenerator(sam, points_per_batch=32)
 
     return mask_generator
 
