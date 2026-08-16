@@ -239,7 +239,8 @@ class DinoV2ExtractFeatures:
         self.dino_model: nn.Module = torch.hub.load(
                 'facebookresearch/dinov2', dino_model)
         self.device = torch.device(device)
-        self.dino_model = self.dino_model.eval().to(self.device)
+        # enable FP16 to reduce vram need
+        self.dino_model = self.dino_model.eval().half().to(self.device)
         self.layer: int = layer
         self.facet = facet
         if self.facet == "token":
@@ -266,7 +267,7 @@ class DinoV2ExtractFeatures:
             - img:   The input image
         """
         with torch.no_grad():
-            res = self.dino_model(img)
+            res = self.dino_model(img.half())
             if self.use_cls:
                 res = self._hook_out
             else:
@@ -282,7 +283,8 @@ class DinoV2ExtractFeatures:
         if self.norm_descs:
             res = F.normalize(res, dim=-1)
         self._hook_out = None   # Reset the hook
-        return res
+        # convert back to float32 to ensure downstream ops don't break
+        return res.float()
     
     def __del__(self):
         self.fh_handle.remove()
