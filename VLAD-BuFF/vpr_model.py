@@ -365,7 +365,7 @@ class VPRModel(pl.LightningModule):
 
             if "pitts" in val_set_name:
                 # split to ref and queries
-                num_references = val_dataset.dbStruct.numDb
+                num_references = val_dataset.numDb
                 positives = val_dataset.getPositives()
             elif "msls" in val_set_name:
                 # split to ref and queries
