@@ -238,7 +238,8 @@ class NetVLAD(nn.Module):
 
     def init_params(self, centroids, descriptors, pcaData=None):
         centroids_assign = centroids / np.linalg.norm(centroids, axis=1, keepdims=True)
-        dots = np.dot(centroids_assign, descriptors.T)
+        # Use einsum instead of np.dot to avoid broken cblas.dll (0xc06d007f crash)
+        dots = np.einsum('kd,nd->kn', centroids_assign, descriptors)  # (K, N)
         dots.sort(0)
         dots = dots[::-1, :]  # sort, descending
 
@@ -395,7 +396,7 @@ class NetVLAD(nn.Module):
         images_num = math.ceil(descriptors_num / descs_num_per_image)
         total_cluster_ds_images = cluster_ds.total_nb_images
         random_sampler = SubsetRandomSampler(
-            np.random.choice(len(cluster_ds), images_num, replace=False)
+            np.random.choice(len(cluster_ds), min(images_num, len(cluster_ds)), replace=False)
         )
         random_dl = DataLoader(
             dataset=cluster_ds,
@@ -455,10 +456,69 @@ class NetVLAD(nn.Module):
             pcaData = None
             dims = self.dim
         try:
-            kmeans = faiss.Kmeans(dims, self.clusters_num, niter=100, verbose=True)
-            kmeans.train(descriptors)
-            logging.debug(f"NetVLAD centroids shape: {kmeans.centroids.shape}")
-            self.init_params(kmeans.centroids, descriptors, pcaData)
+            print(f"[NetVLAD Init] Running K-Means ({self.clusters_num} clusters) on {descriptors.shape[0]} descriptors ...", flush=True)
+            # Chunked K-Means to avoid large BLAS matmuls that crash on this env
+            # due to a broken MKL/vcomp DLL. Processes in chunks of 1000 descriptors.
+            n, d = descriptors.shape
+            k = self.clusters_num
+            CHUNK = 1000  # safe chunk size that avoids MKL
+
+            def _assign_chunked(descs, cents):
+                """Assign each descriptor to nearest centroid, processed in chunks.
+                Uses np.einsum to avoid the broken cblas.dll in this conda environment."""
+                labels = np.empty(len(descs), dtype=np.int32)
+                for start in range(0, len(descs), CHUNK):
+                    chunk = descs[start:start + CHUNK]          # (C, D)
+                    chunk_sq = (chunk ** 2).sum(axis=1, keepdims=True)  # (C, 1)
+                    cent_sq  = (cents ** 2).sum(axis=1)                  # (K,)
+                    dot      = np.einsum('cd,kd->ck', chunk, cents)      # (C, K)
+                    dists    = chunk_sq + cent_sq - 2 * dot               # (C, K)
+                    labels[start:start + CHUNK] = np.argmin(dists, axis=1)
+                return labels
+
+            # K-Means++ initialization (sequential, no large matmul)
+            rng = np.random.default_rng(seed=0)
+            first_idx = rng.integers(0, n)
+            centroids = descriptors[[first_idx]].copy()
+            for c in range(k - 1):
+                min_dists = _assign_chunked(descriptors, centroids)
+                # Recompute actual min distances to chosen centroids
+                chunk_min_dists = np.full(n, np.inf, dtype=np.float32)
+                for start in range(0, n, CHUNK):
+                    chunk = descriptors[start:start + CHUNK]
+                    chunk_sq = (chunk ** 2).sum(axis=1, keepdims=True)
+                    cent_sq  = (centroids ** 2).sum(axis=1)
+                    dot      = np.einsum('cd,kd->ck', chunk, centroids)
+                    d_mat    = chunk_sq + cent_sq - 2 * dot
+                    chunk_min_dists[start:start + CHUNK] = d_mat.min(axis=1)
+                chunk_min_dists = np.clip(chunk_min_dists, 0, None)
+                probs = chunk_min_dists / chunk_min_dists.sum()
+                new_idx = rng.choice(n, p=probs)
+                centroids = np.vstack([centroids, descriptors[[new_idx]]])
+                if (c + 1) % 16 == 0:
+                    print(f"  K-Means++ init: {c+1}/{k-1} centers chosen", flush=True)
+
+            print(f"  K-Means++ init complete. Running Lloyd iterations...", flush=True)
+
+            # Lloyd iterations
+            for iteration in range(100):
+                labels = _assign_chunked(descriptors, centroids)
+                new_centroids = np.array([
+                    descriptors[labels == c].mean(axis=0) if (labels == c).any() else centroids[c]
+                    for c in range(k)
+                ], dtype=np.float32)
+                diff = np.abs(centroids - new_centroids).max()
+                centroids = new_centroids
+                if (iteration + 1) % 10 == 0:
+                    print(f"  Lloyd iteration {iteration+1}/100, max centroid shift: {diff:.6f}", flush=True)
+                if diff < 1e-6:
+                    print(f"[NetVLAD Init] K-Means converged at iteration {iteration+1}", flush=True)
+                    break
+            else:
+                print(f"[NetVLAD Init] K-Means finished 100 iterations", flush=True)
+
+            logging.debug(f"NetVLAD centroids shape: {centroids.shape}")
+            self.init_params(centroids, descriptors, pcaData)
             self = self.to(args.device)
 
         except Exception as e:
