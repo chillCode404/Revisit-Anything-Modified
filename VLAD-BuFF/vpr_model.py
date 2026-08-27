@@ -258,13 +258,7 @@ class VPRModel(pl.LightningModule):
                 total_iters=self.lr_sched_args["total_iters"],
             )
 
-        return [optimizer], [scheduler]
-
-    # configure the optizer step, takes into account the warmup stage
-    def optimizer_step(self, epoch, batch_idx, optimizer, optimizer_idx=0, optimizer_closure=None, **kwargs):
-        # warm up lr
-        optimizer.step(closure=optimizer_closure)
-        self.lr_schedulers().step()
+        return [optimizer], [{"scheduler": scheduler, "interval": "step"}]
 
     #  The loss function call (this method will be called at each training iteration)
     def loss_function(self, descriptors, labels):
