@@ -2,7 +2,7 @@ import pytorch_lightning as pl
 import torch
 from torch.optim import lr_scheduler, optimizer
 import wandb
-from torch.utils.data import Subset
+from torch.utils.data import Subset, ConcatDataset
 import utils
 from models import helper
 from models.helper import L2Norm, Flatten
@@ -11,6 +11,16 @@ from torch import nn
 import torch
 
 IMAGENET_MEAN_STD = {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]}
+
+
+class _JointInitDataset(ConcatDataset):
+    """Thin ConcatDataset wrapper that exposes total_nb_images,
+    as required by initialize_netvlad_layer. Must be defined at module
+    level (not inside __init__) so that multiprocessing workers on
+    Windows can pickle it."""
+    @property
+    def total_nb_images(self):
+        return sum(len(ds) for ds in self.datasets)
 
 
 class VPRModel(pl.LightningModule):
@@ -89,32 +99,56 @@ class VPRModel(pl.LightningModule):
             # agg_config = AggConfig(agg_config)
             self.aggLayer = helper.get_aggregator(agg_arch, agg_config)
 
-            # cluster using gsv single city
+            # Initialize NetVLAD cluster centers via K-Means on a sample of training data.
+            # Using joint dataset (Baidu+Pitts) ensures clusters cover both indoor and outdoor
+            # distributions. Falls back to GSVCities London for legacy/other training modes.
             if agg_config.initialize_clusters:
-                from dataloaders.GSVCitiesDataset import GSVCitiesDataset
-                # Instantiate GSVCitiesDataset with the desired city
-                selected_city = "London"  # Replace with the city you want
-                single_city_dataset = GSVCitiesDataset(
-                    cities=[selected_city],
-                    img_per_place=1,  # Adjust as needed
-                    min_img_per_place=1,  # Adjust as needed
-                    random_sample_from_each_place=True,
-                    transform=T.Compose(
-                        [
-                            T.Resize(
-                                self.args.resize,
-                                interpolation=T.InterpolationMode.BILINEAR,
-                            ),
-                            T.ToTensor(),
-                            T.Normalize(
-                                mean=IMAGENET_MEAN_STD["mean"],
-                                std=IMAGENET_MEAN_STD["std"],
-                            ),  # Adjust mean and std if needed
-                        ]
+                init_transform = T.Compose([
+                    T.Resize(
+                        self.args.resize,
+                        interpolation=T.InterpolationMode.BILINEAR,
                     ),
-                )
+                    T.ToTensor(),
+                    T.Normalize(
+                        mean=IMAGENET_MEAN_STD["mean"],
+                        std=IMAGENET_MEAN_STD["std"],
+                    ),
+                ])
+
+                if getattr(self.args, "dataset_name", "").lower() == "joint":
+                    # Use 1 image per place from both Baidu and Pitts (~211 images total)
+                    # to get a balanced indoor/outdoor sample for K-Means initialization.
+                    from dataloaders.BaiduDataset import BaiduDataset
+                    from dataloaders.PittsburgDataset import PittsburgDataset
+                    print("[NetVLAD Init] Using JointDataset (Baidu+Pitts) for K-Means cluster initialization")
+                    baidu_init = BaiduDataset(
+                        split="train",
+                        img_per_place=1,
+                        min_img_per_place=1,
+                        random_sample_from_each_place=True,
+                        transform=init_transform,
+                    )
+                    pitts_init = PittsburgDataset(
+                        split="train",
+                        img_per_place=1,
+                        min_img_per_place=1,
+                        transform=init_transform,
+                    )
+                    init_dataset = _JointInitDataset([baidu_init, pitts_init])
+                else:
+                    # Legacy fallback: use a single GSVCities city for initialization
+                    print("[NetVLAD Init] Using GSVCitiesDataset (London) for K-Means cluster initialization")
+                    from dataloaders.GSVCitiesDataset import GSVCitiesDataset
+                    init_dataset = GSVCitiesDataset(
+                        cities=["London"],
+                        img_per_place=1,
+                        min_img_per_place=1,
+                        random_sample_from_each_place=True,
+                        transform=init_transform,
+                    )
+
                 self.aggLayer.initialize_netvlad_layer(
-                    agg_config, single_city_dataset, self.backbone
+                    agg_config, init_dataset, self.backbone
                 )
 
             if agg_config.l2 == "before_pool":
@@ -227,7 +261,7 @@ class VPRModel(pl.LightningModule):
         return [optimizer], [scheduler]
 
     # configure the optizer step, takes into account the warmup stage
-    def optimizer_step(self, epoch, batch_idx, optimizer, optimizer_closure):
+    def optimizer_step(self, epoch, batch_idx, optimizer, optimizer_idx=0, optimizer_closure=None, **kwargs):
         # warm up lr
         optimizer.step(closure=optimizer_closure)
         self.lr_schedulers().step()

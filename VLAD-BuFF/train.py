@@ -1,6 +1,11 @@
+# script to avoid SSL on local computer (windows)
+import ssl
+ssl._create_default_https_context = ssl._create_unverified_context
+
 import pytorch_lightning as pl
 from vpr_model import VPRModel
-from dataloaders.GSVCitiesDataloader import GSVCitiesDataModule
+# from dataloaders.GSVCitiesDataloader import GSVCitiesDataModule
+from dataloaders.JointDataloader import JointDataModule
 import argparse
 import wandb
 
@@ -47,6 +52,13 @@ def parse_args():
     parser.add_argument("--num_workers", type=int, default=20, help="Number of workers")
     parser.add_argument(
         "--show_data_stats", type=bool, default=True, help="Show data statistics"
+    )
+    parser.add_argument(
+        "--train_set_names",
+        nargs="+",
+        default=["pitts", "baidu"],
+        choices=["pitts", "baidu"],
+        help="Training datasets to use (joint training). Supported: pitts, baidu",
     )
 
     parser.add_argument(
@@ -244,9 +256,9 @@ def parse_args():
     )
     parser.add_argument(
         "--precision",
-        type=str,
-        default="16-mixed",
-        choices=["32-true", "16-mixed"],
+        type=int,
+        default=16,
+        choices=[32, 16],
         help="_",
     )
     parser.add_argument(
@@ -318,19 +330,38 @@ if __name__ == "__main__":
         # args = wandb.config
 
     if args.pl_seed:
+        import os
+        os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
         pl.seed_everything(seed=int(args.seed), workers=True)
 
-    datamodule = GSVCitiesDataModule(
-        batch_size=args.batch_size,
-        img_per_place=args.img_per_place,
-        min_img_per_place=args.min_img_per_place,
-        shuffle_all=args.shuffle_all,  # shuffle all images or keep shuffling in-city only
-        random_sample_from_each_place=args.random_sample_from_each_place,
-        image_size=args.resize,
-        num_workers=args.num_workers,
-        show_data_stats=args.show_data_stats,
-        val_set_names=args.val_set_names,  # pitts30k_val, pitts30k_test, msls_val
-    )
+    # Use JointDataModule for combined Pitts + Baidu training,
+    # or fall back to GSVCitiesDataModule when dataset_name is 'gsv_cities'.
+    if args.dataset_name.lower() == "gsv_cities":
+        pass
+        # datamodule = GSVCitiesDataModule(
+        #     batch_size=args.batch_size,
+        #     img_per_place=args.img_per_place,
+        #     min_img_per_place=args.min_img_per_place,
+        #     shuffle_all=args.shuffle_all, # shuffle all images or keep shuffling in-city only
+        #     random_sample_from_each_place=args.random_sample_from_each_place,
+        #     image_size=args.resize,
+        #     num_workers=args.num_workers,
+        #     show_data_stats=args.show_data_stats,
+        #     val_set_names=args.val_set_names, # pitts30k_val, pitts30k_test, msls_val
+        # )
+    else:
+        datamodule = JointDataModule(
+            train_set_names=args.train_set_names,
+            batch_size=args.batch_size,
+            img_per_place=args.img_per_place,
+            min_img_per_place=args.min_img_per_place,
+            shuffle_all=args.shuffle_all,
+            random_sample_from_each_place=args.random_sample_from_each_place,
+            image_size=args.resize,
+            num_workers=args.num_workers,
+            show_data_stats=args.show_data_stats,
+            val_set_names=args.val_set_names,
+        )
 
     if "netvlad" in args.aggregation.lower():
         agg_config = args
@@ -386,7 +417,7 @@ if __name__ == "__main__":
         + "_({epoch:02d})_R1[{pitts30k_val/R1:.4f}]_R5[{pitts30k_val/R5:.4f}]",
         auto_insert_metric_name=False,
         save_weights_only=True,
-        save_top_k=args.epochs,
+        save_top_k=3,  # Changed from args.epochs to save space on Kaggle (max 20GB)
         save_last=True,
         mode="max",
     )
