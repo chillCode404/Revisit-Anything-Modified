@@ -357,10 +357,6 @@ class VPRModel(pl.LightningModule):
         val_step_outputs = self.val_outputs
 
         dm = self.trainer.datamodule
-        # The following line is a hack: if we have only one validation set, then
-        # we need to put the outputs in a list (Pytorch Lightning does not do it presently)
-        if len(dm.val_datasets) == 1:  # we need to put the outputs in a list
-            val_step_outputs = [val_step_outputs]
 
         for i, (val_set_name, val_dataset) in enumerate(
             zip(dm.val_set_names, dm.val_datasets)
