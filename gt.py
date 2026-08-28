@@ -33,7 +33,7 @@ def get_gt(dataset, cfg, workdir_data, ims1_r=None, ims2_q=None, func_vpr_module
         gt = vpr_dl.soft_positives_per_query
 
     elif dataset == "pitts":
-        npy_pitts_path = f"{workdir_data}/{dataset}/pitts30k/images/test/"
+        npy_pitts_path = f"{workdir_data}/{dataset}/pitts_small/images/test/"
         db = np.load(f"{npy_pitts_path}database.npy")
         q = np.load(f"{npy_pitts_path}queries.npy")
         utmDb = func_vpr_module.get_utm(db)
